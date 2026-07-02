@@ -1,6 +1,0 @@
-rasterio
-opencv-python
-numpy
-torch
-torchvision
-timm
