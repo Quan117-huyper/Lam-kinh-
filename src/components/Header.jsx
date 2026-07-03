@@ -1,4 +1,4 @@
-export default function Header({ onExport, onFlyToAll, onTogglePanel }) {
+export default function Header({ onExport, isExporting, onFlyToAll, onTogglePanel }) {
   return (
     <header className="topbar">
       <div className="brand" aria-label="Lâm Kính">
@@ -14,8 +14,9 @@ export default function Header({ onExport, onFlyToAll, onTogglePanel }) {
         </span>
       </div>
       <div className="top-actions">
-        <button className="icon-button" id="exportMap" onClick={onExport} title="Xuất ảnh bản đồ PNG" aria-label="Xuất ảnh bản đồ PNG">
+        <button className="icon-button report-export-button" id="exportMap" onClick={onExport} disabled={isExporting} title="Xuất báo cáo PDF" aria-label="Xuất báo cáo PDF">
           <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3" /></svg>
+          <span>{isExporting ? 'Đang tạo…' : 'Xuất báo cáo PDF'}</span>
         </button>
         <button className="icon-button" id="resetView" onClick={onFlyToAll} title="Về góc nhìn Việt Nam" aria-label="Về góc nhìn Việt Nam">
           <svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7M5 10v10h14V10M9 20v-6h6v6" /></svg>

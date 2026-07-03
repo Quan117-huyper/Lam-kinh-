@@ -6,6 +6,7 @@ import MapTools from './components/MapTools.jsx';
 import RegionCard from './components/RegionCard.jsx';
 import Footer from './components/Footer.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
+import { openReportBuilder } from './lib/reportBuilder.js';
 
 export default function App() {
   const cesiumContainer = useRef(null);
@@ -58,6 +59,32 @@ export default function App() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [is3D, setIs3D] = useState(false);
   const [spectralMode, setSpectralMode] = useState('true-color');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportReport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      let snapshot = `${window.location.origin}/image.png`;
+      let snapshots = { rgb: snapshot };
+      let snapshotWarning = 'Canvas bản đồ chưa sẵn sàng; báo cáo đang dùng ảnh minh họa dự phòng.';
+      try {
+        const captured = await mapLogic.current?.getReportSnapshots();
+        if (captured?.rgb) {
+          snapshots = captured;
+          snapshot = captured.rgb;
+          snapshotWarning = '';
+        }
+      } catch (captureError) {
+        console.warn('Không thể chụp canvas Cesium cho báo cáo:', captureError);
+      }
+      openReportBuilder({ snapshot, snapshots, snapshotWarning, stats, card, analysis, status, spectralMode });
+    } catch (error) {
+      window.alert(`Không thể tạo báo cáo PDF: ${error.message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!cesiumContainer.current || mapLogic.current) return;
@@ -152,7 +179,8 @@ export default function App() {
       <div id="cesiumContainer" ref={cesiumContainer} aria-label="Bản đồ 3D Việt Nam"></div>
 
       <Header 
-        onExport={() => mapLogic.current?.exportMap()}
+        onExport={handleExportReport}
+        isExporting={isExporting}
         onFlyToAll={() => mapLogic.current?.flyToAll()} 
         onTogglePanel={() => document.getElementById('controlPanel').classList.toggle('hidden')} 
       />

@@ -210,12 +210,26 @@ export function initCesiumMap(containerId, callbacks) {
   }
 
   function repairMojibake(value) {
-    if (!value || !/[ÃÄáºá»]/.test(value)) return value;
-    try {
-      return new TextDecoder("utf-8").decode(Uint8Array.from([...value].map((char) => char.charCodeAt(0))));
-    } catch {
-      return value;
+    if (!value) return value;
+    const windows1252 = new Map([..."€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ"]
+      .map((char, index) => [char, index + 0x80]));
+    let result = value;
+    for (let pass = 0; pass < 2 && /[ÃÄÂáºá»]/.test(result); pass += 1) {
+      try {
+        const bytes = [...result].map((char) => {
+          const code = char.charCodeAt(0);
+          if (code <= 0xff) return code;
+          if (windows1252.has(char)) return windows1252.get(char);
+          throw new Error("Ký tự không thuộc Windows-1252");
+        });
+        const decoded = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bytes));
+        if (decoded.includes("�")) break;
+        result = decoded;
+      } catch {
+        break;
+      }
     }
+    return result.replaceAll("�", "").trim();
   }
 
   function parseKml(xmlText) {
@@ -508,18 +522,38 @@ export function initCesiumMap(containerId, callbacks) {
   async function fetchWithRetry(url, options, attempts = 2) {
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
       try {
-        const response = await fetch(url, options);
+        const response = await fetch(url, { ...options, signal: controller.signal });
         if (response.ok || (response.status < 500 && response.status !== 429)) return response;
         lastError = new Error(`HTTP ${response.status}`);
       } catch (error) {
-        lastError = error;
+        lastError = new Error(error.name === "AbortError"
+          ? "Dịch vụ Sentinel-2 không phản hồi sau 12 giây"
+          : "Không thể kết nối dịch vụ Sentinel-2");
+      } finally {
+        clearTimeout(timeout);
       }
       if (attempt + 1 < attempts) {
         await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
       }
     }
     throw lastError || new Error("Yêu cầu mạng thất bại");
+  }
+
+  function showLocalSentinelFallback() {
+    if (spectralLayer) spectralLayer.show = false;
+    spectralLayer = viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+      url: "/img/2026-05-21-_True_color.jpg",
+      rectangle: dataRectangle
+    }));
+    spectralLayer.alpha = 0.78;
+    viewer.imageryLayers.raiseToTop(spectralLayer);
+    callbacks.onSatelliteDisabledChange(false);
+    callbacks.onSatelliteCheckedChange(true);
+    callbacks.onSpectralModeDisabledChange(true);
+    scene.requestRender();
   }
 
   function clearIndexOverlay() {
@@ -736,13 +770,10 @@ export function initCesiumMap(containerId, callbacks) {
       await renderSpectralLayer(currentSpectralMode, selectedPlot || plots[0]);
       markMapUpdated();
     } catch (error) {
-      callbacks.onSpectralStatusChange(`Không tải được Sentinel-2: ${error.message}`);
-      callbacks.onSatelliteDisabledChange(false);
-      callbacks.onSatelliteCheckedChange(true);
-      callbacks.onSpectralModeDisabledChange(false);
-      renderSpectralLayer("true-color", selectedPlot);
+      callbacks.onSpectralStatusChange("API tạm thời không khả dụng · ảnh cục bộ 21/05/2026");
+      showLocalSentinelFallback();
       plots.forEach((plot) => {
-        plot.analysis = { error: `Không có ảnh để đánh giá: ${error.message}` };
+        plot.analysis = { error: `Không tính chỉ số mới: ${error.message}. Đang hiển thị ảnh True Color cục bộ; ảnh này không được dùng để suy ra chỉ số.` };
       });
       if (selectedPlot) updateAnalysisPanel(selectedPlot);
       return;
@@ -878,5 +909,58 @@ export function initCesiumMap(containerId, callbacks) {
     link.click();
   }
 
-  return { setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, exportMap, destroy };
+  function getMapSnapshot() {
+    scene.render();
+    return scene.canvas.toDataURL("image/jpeg", 0.92);
+  }
+
+  function waitForImagery(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        removeListener?.();
+        clearTimeout(timeout);
+        scene.render();
+        resolve();
+      };
+      const removeListener = scene.globe.tileLoadProgressEvent.addEventListener((pending) => {
+        if (pending === 0) setTimeout(finish, 180);
+      });
+      const timeout = setTimeout(finish, timeoutMs);
+      scene.requestRender();
+    });
+  }
+
+  async function getReportSnapshots() {
+    const plot = activeSpectralPlot || selectedPlot || plots[0];
+    const originalMode = currentSpectralMode;
+    const captures = {};
+    if (!plot?.analysisItem) {
+      captures.rgb = getMapSnapshot();
+      return captures;
+    }
+    const modes = [
+      ["rgb", "true-color"],
+      ["falseColor", "false-color"],
+      ["ndvi", "ndvi"],
+      ["ndre", "ndre"],
+      ["ndmi", "ndmi"]
+    ];
+    for (const [key, mode] of modes) {
+      try {
+        await renderSpectralLayer(mode, plot);
+        await waitForImagery();
+        captures[key] = getMapSnapshot();
+      } catch (error) {
+        console.warn(`Không thể chụp lớp ${mode}:`, error);
+      }
+    }
+    await renderSpectralLayer(originalMode, plot);
+    scene.requestRender();
+    return captures;
+  }
+
+  return { setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, exportMap, getMapSnapshot, getReportSnapshots, destroy };
 }
