@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 export default function ControlPanel({ 
   stats, 
   status, 
@@ -14,8 +16,22 @@ export default function ControlPanel({
   cover,
   coverOptions,
   onSetCoverOptions,
-  onCalculateCover
+  onCalculateCover,
+  onUploadKml
 }) {
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      onUploadKml?.(event.target.result);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   const fmt = (value, digits = 1) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—';
   const money = (value) => Number.isFinite(Number(value)) ? new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value)) : '—';
   const metrics = cover?.metrics;
@@ -36,11 +52,27 @@ export default function ControlPanel({
         <p>Trực quan hóa toàn bộ polygon từ KML bằng ranh giới chính xác và lớp cây 3D procedural.</p>
       </div>
 
-      <div className="draw-tools">
+      <div className="draw-tools" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
         <button id="drawPolygon" className={`draw-primary ${isDrawing ? 'active' : ''}`} onClick={onToggleDrawing}>
           <svg viewBox="0 0 24 24"><path d="m5 6 6-3 8 5-2 10-10 2-4-8Z"/><circle cx="5" cy="6" r="1.5"/><circle cx="19" cy="8" r="1.5"/><circle cx="17" cy="18" r="1.5"/></svg>
-          <span>{isDrawing ? "Hủy vẽ polygon" : "Vẽ vùng phân tích"}</span>
+          <span>{isDrawing ? "Hủy vẽ" : "Vẽ vùng"}</span>
         </button>
+        <button 
+          id="uploadKmlBtn" 
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="Tải lên tệp KML mới"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          <span>Tải tệp KML</span>
+        </button>
+        <input 
+          type="file" 
+          accept=".kml" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          onChange={handleFileChange} 
+        />
       </div>
 
       <section className="control-section">

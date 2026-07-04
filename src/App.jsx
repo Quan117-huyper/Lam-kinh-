@@ -104,6 +104,10 @@ export default function App() {
     }
   };
 
+  const handleUploadKml = (kmlText) => {
+    mapLogic.current?.loadCustomKml(kmlText);
+  };
+
   useEffect(() => {
     if (!cesiumContainer.current || mapLogic.current) return;
 
@@ -232,6 +236,7 @@ export default function App() {
             setCover({ status: 'error', note: error.message, metrics: null, valuation: null });
           });
         }}
+        onUploadKml={handleUploadKml}
       />
 
       <MapTools 

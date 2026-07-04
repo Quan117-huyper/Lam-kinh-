@@ -831,6 +831,54 @@ export function initCesiumMap(containerId, callbacks) {
     }
   }
 
+  async function loadCustomKml(kmlText) {
+    try {
+      const parsedPlots = parseKml(kmlText);
+      if (!parsedPlots.length) throw new Error("KML không chứa polygon nào.");
+      
+      // Clear old state
+      boundarySource.entities.removeAll();
+      forestSource.entities.removeAll();
+      indexOverlaySource.entities.removeAll();
+      plots.length = 0;
+      selectedPlot = null;
+      activeSpectralPlot = null;
+      spectralLayerCache.clear();
+      if (spectralLayer) {
+        viewer.imageryLayers.remove(spectralLayer);
+        spectralLayer = null;
+      }
+      
+      plots.push(...parsedPlots);
+      plots.forEach(addPlotBoundary);
+      
+      const allBounds = plots.reduce((bounds, plot) => ({
+        west: Math.min(bounds.west, plot.bounds.west), east: Math.max(bounds.east, plot.bounds.east),
+        south: Math.min(bounds.south, plot.bounds.south), north: Math.max(bounds.north, plot.bounds.north)
+      }), { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity });
+      
+      const lonPadding = Math.max((allBounds.east - allBounds.west) * 0.28, 0.002);
+      const latPadding = Math.max((allBounds.north - allBounds.south) * 0.28, 0.002);
+      dataRectangle = Cesium.Rectangle.fromDegrees(
+        allBounds.west - lonPadding, allBounds.south - latPadding,
+        allBounds.east + lonPadding, allBounds.north + latPadding
+      );
+      
+      updatePlotSummary();
+      callbacks.onCameraCoordsChange(`${plots[0].center.lat.toFixed(4)}°N · ${plots[0].center.lon.toFixed(4)}°E`);
+      rebuildForest();
+      renderSearchResults();
+      
+      updateCard(plots[0], false);
+      flyToAll(2.0);
+      
+      callbacks.onSpectralStatusChange("Đang tải Sentinel-2 L2A...");
+      await loadLatestSentinel(allBounds);
+    } catch (error) {
+      window.alert(`Không thể đọc KML: ${error.message}`);
+    }
+  }
+
   const clickHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
   clickHandler.setInputAction((movement) => {
     if (isDrawing) {
@@ -977,5 +1025,5 @@ export function initCesiumMap(containerId, callbacks) {
     return captures;
   }
 
-  return { setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, calculateCoverAndValue, exportMap, getMapSnapshot, getReportSnapshots, destroy };
+  return { loadCustomKml, setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, calculateCoverAndValue, exportMap, getMapSnapshot, getReportSnapshots, destroy };
 }
