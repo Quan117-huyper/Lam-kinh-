@@ -7,13 +7,13 @@ const esc = (value = '') => String(value)
 const has = (value) => value !== undefined && value !== null && String(value).trim() && String(value).trim() !== '—';
 const val = (value, suffix = '') => has(value) ? `${esc(value)}${suffix}` : '<i>Chưa đủ dữ liệu</i>';
 const num = (value, suffix = '') => has(value) && Number.isFinite(Number(value))
-  ? `${new Intl.NumberFormat('vi-VN').format(Number(value))}${suffix}`
+  ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Number(value))}${suffix}`
   : '<i>Chưa đủ dữ liệu</i>';
 const money = (value) => has(value) && Number.isFinite(Number(value))
-  ? `${new Intl.NumberFormat('vi-VN').format(Number(value))} VNĐ`
+  ? `${new Intl.NumberFormat('vi-VN').format(Math.round(Number(value) / 1000000) * 1000000)} VNĐ`
   : '<i>Chưa đủ dữ liệu</i>';
 const compactMoney = (value) => has(value) && Number.isFinite(Number(value))
-  ? `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 2 }).format(Number(value))} VNĐ`
+  ? `${new Intl.NumberFormat('vi-VN').format(Math.round(Number(value) / 1000000) * 1000000)} VNĐ`
   : '—';
 const row = (label, content) => `<tr><th>${label}</th><td>${content}</td></tr>`;
 const field = (name, label, value = '', type = 'text') => `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}"></label>`;
@@ -24,9 +24,9 @@ const finiteNumber = (value) => {
 };
 
 const REPORTS = {
-  health: { title: 'Forest Health Report', label: 'Báo cáo sức khỏe', pages: '7 trang' },
-  bank: { title: 'Report for Bank', label: 'Báo cáo cho ngân hàng', pages: '12 trang' },
-  investor: { title: 'Investor Report', label: 'Báo cáo cho nhà đầu tư', pages: '10 trang A4' },
+  health: { title: 'Báo cáo sức khỏe rừng', label: 'Báo cáo sức khỏe', pages: '7 trang' },
+  bank: { title: 'Báo cáo thẩm định tài sản', label: 'Báo cáo cho ngân hàng', pages: '12 trang' },
+  investor: { title: 'Báo cáo đánh giá đầu tư', label: 'Báo cáo cho nhà đầu tư', pages: '10 trang A4' },
 };
 
 const MODEL_CYCLE = { paper4: 4, paper5: 5, timber8: 8, large10: 10 };
@@ -138,101 +138,217 @@ function facts(c, f) {
   return { area, score, gross, net, center, cover, valuation, volume };
 }
 
+
 const page = (n, kicker, title, body) => `<section class="page"><header><div><span>${kicker}</span><h2>${title}</h2></div><b>${String(n).padStart(2, '0')}</b></header>${body}<footer><span>LÂM KÍNH · Báo cáo hỗ trợ ra quyết định</span><span>Trang ${String(n).padStart(2, '0')}</span></footer></section>`;
 const visual = (src, label, note) => `<figure class="visual">${src ? `<img src="${src}">` : '<div class="visual-empty">Không có dữ liệu</div>'}<figcaption>${label}${note ? ` · ${note}` : ''}</figcaption></figure>`;
+const corpRows = (rows) => `<table class="table">${rows.map(([a, b]) => row(a, b)).join('')}</table>`;
+const corpPage = (f, pageNo, title, subtitle, body) => page(pageNo, `BÁO CÁO NHÀ ĐẦU TƯ · ${subtitle}`, title, body);
 
-function cover(c, f, title, highlight) {
+// --- COMPONENT LIBRARY ---
+
+const CoverPage = ({ c, f, x, title, highlight }) => {
   return `<section class="page cover"><div class="hero"><img src="${c.snapshots?.rgb || c.snapshot}"></div><div class="cover-copy"><div class="brand">LÂM KÍNH · FOREST INTELLIGENCE</div><h1>${title}</h1><p>${val(f.project || c.card.name)}</p>${c.snapshotWarning ? `<div class="notice">${esc(c.snapshotWarning)}</div>` : ''}<div class="cover-data"><div><span class="label">Chủ sở hữu</span><strong>${val(f.owner)}</strong></div><div><span class="label">Ngày báo cáo</span><strong>${val(f.date)}</strong></div><div><span class="label">Mã lô</span><strong>${val(c.card.plot?.id)}</strong></div><div><span class="label">${highlight ? 'Giá trị ước tính' : 'Diện tích'}</span><strong>${highlight || val(c.card.area || c.stats.totalArea, ' ha')}</strong></div></div></div></section>`;
-}
+};
 
-function infoPage(c, f, x, n = 2) {
-  return page(n, 'HỒ SƠ LÔ RỪNG', 'Thông tin lô', `<table class="table">${row('Tên lô / dự án', val(f.project))}${row('Mã lô', val(c.card.plot?.id))}${row('Chủ sở hữu', val(f.owner))}${row('Địa chỉ', val(f.address))}${row('Tỉnh · Huyện · Xã', val([f.province, f.district, f.commune].filter(Boolean).join(' · ')))}${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}${row('Loại cây', val(f.treeType))}${row('Ngày trồng', val(f.plantingDate))}${row('Tuổi cây', num(f.age, ' năm'))}${row('Chu kỳ khai thác', num(f.cycle, ' năm'))}${row('Nguồn dữ liệu', val(c.card.plot?.sourceName || 'KML người dùng'))}</table><div class="notice">Thông tin do người dùng nhập cần đối chiếu hồ sơ pháp lý và kiểm kê thực địa.</div>`);
-}
+const ExecutiveDashboard = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'TỔNG QUAN', 'Bảng điều khiển', `
+    <div class="kpis">
+      <div class="kpi"><span>Diện tích</span><strong>${Number.isFinite(x.area) ? x.area.toLocaleString('vi-VN') : '—'}</strong><small>ha</small></div>
+      <div class="kpi"><span>Điểm sức khỏe</span><strong>${Number.isFinite(x.score) ? x.score : '—'}</strong><small>/100</small></div>
+      <div class="kpi"><span>Giá trị</span><strong style="font-size:12px">${money(x.net)}</strong><small>tham khảo</small></div>
+    </div>
+  `);
+};
 
-function healthPage(c, x, n = 4) {
+const ForestProfile = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'HỒ SƠ LÔ RỪNG', 'Thông tin lô', `
+    <table class="table">
+      ${row('Tên lô / dự án', val(f.project))}
+      ${row('Mã lô', val(c.card.plot?.id))}
+      ${row('Chủ sở hữu', val(f.owner))}
+      ${row('Địa chỉ', val(f.address))}
+      ${row('Tỉnh · Huyện · Xã', val([f.province, f.district, f.commune].filter(Boolean).join(' · ')))}
+      ${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}
+      ${row('Loại cây', val(f.treeType))}
+      ${row('Ngày trồng', val(f.plantingDate))}
+      ${row('Tuổi cây', num(f.age, ' năm'))}
+      ${row('Chu kỳ khai thác', num(f.cycle, ' năm'))}
+    </table>
+    <div class="notice">Thông tin do người dùng nhập cần đối chiếu hồ sơ pháp lý và kiểm kê thực địa.</div>
+  `);
+};
+
+const SatelliteOverview = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'TRỰC QUAN HÓA VỆ TINH', 'Các lớp phân tích phổ', `
+    <div class="visual-grid">
+      ${visual(c.snapshots?.falseColor, 'Tổ hợp màu giả (False Color)', 'Nhận diện tán lá')}
+      ${visual(c.snapshots?.ndvi, 'Chỉ số thực vật (NDVI)', 'Độ xanh thực vật')}
+      ${visual(c.snapshots?.ndre, 'Chỉ số cạnh đỏ (NDRE)', 'Diệp lục / red edge')}
+      ${visual(c.snapshots?.ndmi, 'Chỉ số độ ẩm (NDMI)', 'Độ ẩm tán lá')}
+    </div>
+    <div class="notice">Mỗi ảnh được chụp từ đúng lớp phổ tương ứng. Lớp không tải được từ hệ thống liên kết sẽ để trống, không thay bằng ảnh màu tự nhiên.</div>
+  `);
+};
+
+const HealthAssessment = ({ c, f, x, pageNum }) => {
   const score = Number.isFinite(x.score) ? x.score : 0;
-  return page(n, 'PHÂN TÍCH VIỄN THÁM', 'Đánh giá sức khỏe rừng', `<div class="score" style="--s:${score}"><div class="ring"><strong>${Number.isFinite(x.score) ? `${x.score}%` : '—'}</strong></div><div><span class="eyebrow">FOREST HEALTH SCORE</span><h3>${val(c.analysis.healthClass)}</h3><p>${val(c.analysis.note)}</p></div></div><ul class="bullets"><li>NDVI trung bình: <strong>${val(c.analysis.mean)}</strong>; NDMI: <strong>${val(c.analysis.ndmi)}</strong>.</li><li>Không kết luận mất rừng, cháy hoặc diện tích bất thường nếu chưa có chuỗi thời gian và phân vùng pixel.</li><li>Cần kiểm chứng thực địa tại khu vực có tín hiệu khác biệt.</li></ul><div class="notice">Điểm sức khỏe là NDVI được chuẩn hóa, không phải xác suất AI. Độ chính xác phụ thuộc mây, ngày ảnh, độ phân giải 10-20 m, KML và dữ liệu kiểm chứng.</div>`);
-}
+  return page(pageNum, 'PHÂN TÍCH VIỄN THÁM', 'Đánh giá sức khỏe rừng', `
+    <div class="score" style="--s:${score}">
+      <div class="ring"><strong>${Number.isFinite(x.score) ? `${x.score}%` : '—'}</strong></div>
+      <div><span class="eyebrow">ĐIỂM SỨC KHỎE RỪNG</span><h3>${val(c.analysis.healthClass)}</h3><p>${val(c.analysis.note)}</p></div>
+    </div>
+    <ul class="bullets">
+      <li>Chỉ số thực vật trung bình: <strong>${val(c.analysis.mean)}</strong>; Chỉ số độ ẩm tán lá: <strong>${val(c.analysis.ndmi)}</strong>.</li>
+      <li>Không kết luận mất rừng, cháy hoặc diện tích bất thường nếu chưa có chuỗi thời gian và phân vùng pixel.</li>
+      <li>Cần kiểm chứng thực địa tại khu vực có tín hiệu khác biệt.</li>
+    </ul>
+    <div class="notice">Điểm sức khỏe là chỉ số thực vật được chuẩn hóa, không phải xác suất trí tuệ nhân tạo. Độ chính xác phụ thuộc mây, ngày ảnh, độ phân giải 10-20 m, tệp ranh giới và dữ liệu kiểm chứng.</div>
+  `);
+};
 
-function valuationPage(f, x, n = 5) {
-  return page(n, 'MÔ HÌNH TÀI CHÍNH', 'Ước tính tài sản', `<table class="table">${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}${row('Tuổi trung bình', num(f.age, ' năm'))}${row('Sản lượng dự kiến', has(x.volume) ? `${Number(x.volume).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} m³` : val())}${row('Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val())}${row('Giá trị gỗ ước tính', money(x.gross))}${row('Giá trị ròng ước tính', money(x.net))}</table><div class="callout"><span>GIÁ TRỊ THAM KHẢO</span><strong>${money(x.net)}</strong></div><div class="notice">Chỉ tính từ sản lượng và đơn giá người dùng cung cấp; hệ thống chưa tự suy diễn sinh khối hoặc giá thị trường.</div>`);
-}
+const AssetEstimation = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'MÔ HÌNH TÀI CHÍNH', 'Ước tính tài sản', `
+    <table class="table">
+      ${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}
+      ${row('Tuổi trung bình', num(f.age, ' năm'))}
+      ${row('Sản lượng dự kiến', has(x.volume) ? `${Number(x.volume).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} m³` : val())}
+      ${row('Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val())}
+      ${row('Giá trị gỗ ước tính', money(x.gross))}
+      ${row('Giá trị ròng ước tính', money(x.net))}
+    </table>
+    <div class="callout"><span>GIÁ TRỊ THAM KHẢO</span><strong>${money(x.net)}</strong></div>
+    <div class="notice">Chỉ tính từ sản lượng và đơn giá người dùng cung cấp; hệ thống chưa tự suy diễn sinh khối hoặc giá thị trường.</div>
+  `);
+};
 
-function conclusionPage(c, x, n) {
-  return page(n, 'KẾT LUẬN', 'Tóm tắt và phạm vi sử dụng', `<div class="kpis"><div class="kpi"><span>Diện tích</span><strong>${Number.isFinite(x.area) ? x.area.toLocaleString('vi-VN') : '—'}</strong><small>hecta</small></div><div class="kpi"><span>Sức khỏe</span><strong>${Number.isFinite(x.score) ? `${x.score}%` : '—'}</strong><small>NDVI chuẩn hóa</small></div><div class="kpi"><span>Giá trị ròng</span><strong style="font-size:12px">${money(x.net)}</strong><small>tham khảo</small></div></div><ul class="bullets"><li>Ranh giới được tổng hợp từ tệp KML người dùng.</li><li>Tình trạng thảm thực vật mô tả từ Sentinel-2 tại thời điểm gần nhất.</li><li>Định giá chỉ có ý nghĩa khi giả định đầu vào đã được xác minh.</li></ul><div class="notice"><strong>Lưu ý pháp lý:</strong> Giá trị ước tính dựa trên dữ liệu viễn thám và giả định thị trường tại thời điểm báo cáo. Báo cáo hỗ trợ thẩm định, không thay thế khảo sát thực địa, hồ sơ pháp lý hoặc quyết định định giá chính thức.</div><div class="signature"><div>Đại diện chủ sở hữu</div><div>Đơn vị lập báo cáo</div></div>`);
-}
+const OwnerRecommendation = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'HÀNH ĐỘNG ĐỀ XUẤT', 'Khuyến nghị', `
+    <div class="callout">
+      <span>ƯU TIÊN HIỆN TẠI</span>
+      <strong>${Number.isFinite(x.score) && x.score >= 70 ? 'Theo dõi định kỳ' : 'Khảo sát thực địa'}</strong>
+    </div>
+    <ul class="bullets">
+      <li>Đối chiếu tệp ranh giới (KML) với hồ sơ và mốc giới.</li>
+      <li>Thu thập ô mẫu để hiệu chỉnh trữ lượng.</li>
+      <li>Phân tích lại sau 30-60 ngày.</li>
+      <li>Kiểm tra vùng chỉ số thực vật và độ ẩm thấp sau khi có phân vùng bất thường.</li>
+    </ul>
+  `);
+};
 
-function healthReport(c, f) {
-  const x = facts(c, f);
-  let body = cover(c, f, 'FOREST HEALTH REPORT<br>BÁO CÁO SỨC KHỎE RỪNG', '');
-  body += infoPage(c, f, x, 2);
-  body += page(3, 'TRỰC QUAN HÓA VỆ TINH', 'Các lớp phân tích phổ', `<div class="visual-grid">${visual(c.snapshots?.falseColor, 'False Color', 'Nhận diện tán lá')}${visual(c.snapshots?.ndvi, 'NDVI', 'Độ xanh thực vật')}${visual(c.snapshots?.ndre, 'NDRE', 'Diệp lục / red edge')}${visual(c.snapshots?.ndmi, 'NDMI', 'Độ ẩm tán lá')}</div><div class="notice">Mỗi ảnh được chụp từ đúng lớp phổ tương ứng. Lớp không tải được từ API sẽ để trống, không thay bằng RGB.</div>`);
-  body += healthPage(c, x, 4);
-  body += valuationPage(f, x, 5);
-  body += page(6, 'HÀNH ĐỘNG ĐỀ XUẤT', 'Khuyến nghị', `<div class="callout"><span>ƯU TIÊN HIỆN TẠI</span><strong>${Number.isFinite(x.score) && x.score >= 70 ? 'Theo dõi định kỳ' : 'Khảo sát thực địa'}</strong></div><ul class="bullets"><li>Đối chiếu KML với hồ sơ và mốc giới.</li><li>Thu thập ô mẫu để hiệu chỉnh trữ lượng.</li><li>Phân tích lại sau 30-60 ngày.</li><li>Kiểm tra vùng NDVI/NDMI thấp sau khi có phân vùng bất thường.</li></ul>`);
-  body += conclusionPage(c, x, 7);
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${REPORTS.health.title}</title>${css}</head><body>${body}</body></html>`;
-}
+const Disclaimer = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'KẾT LUẬN', 'Tóm tắt và phạm vi sử dụng', `
+    <div class="kpis">
+      <div class="kpi"><span>Diện tích</span><strong>${Number.isFinite(x.area) ? x.area.toLocaleString('vi-VN') : '—'}</strong><small>hecta</small></div>
+      <div class="kpi"><span>Sức khỏe</span><strong>${Number.isFinite(x.score) ? `${x.score}%` : '—'}</strong><small>Chỉ số thực vật chuẩn hóa</small></div>
+      <div class="kpi"><span>Giá trị ròng</span><strong style="font-size:12px">${money(x.net)}</strong><small>tham khảo</small></div>
+    </div>
+    <ul class="bullets">
+      <li>Ranh giới được tổng hợp từ tệp ranh giới người dùng.</li>
+      <li>Tình trạng thảm thực vật mô tả từ vệ tinh Sentinel-2 tại thời điểm gần nhất.</li>
+      <li>Định giá chỉ có ý nghĩa khi giả định đầu vào đã được xác minh.</li>
+    </ul>
+    <div class="notice"><strong>Lưu ý pháp lý:</strong> Giá trị ước tính dựa trên dữ liệu viễn thám và giả định thị trường tại thời điểm báo cáo. Báo cáo hỗ trợ thẩm định, không thay thế khảo sát thực địa, hồ sơ pháp lý hoặc quyết định định giá chính thức.</div>
+    <div class="signature"><div>Đại diện chủ sở hữu</div><div>Đơn vị lập báo cáo</div></div>
+  `);
+};
 
-function basicReport(c, f) {
-  const x = facts(c, f);
-  const isBank = f.type === 'bank';
-  let body = cover(c, f, isBank ? 'REPORT FOR BANK<br>THẨM ĐỊNH TÀI SẢN RỪNG' : 'FOREST HEALTH REPORT<br>BÁO CÁO SỨC KHỎE RỪNG', isBank ? money(x.net) : '');
-  body += page(2, isBank ? 'THẨM ĐỊNH TÀI SẢN' : 'SỨC KHỎE RỪNG', isBank ? 'Tổng quan thẩm định' : 'Tổng quan sức khỏe', `<div class="kpis"><div class="kpi"><span>Diện tích</span><strong>${Number.isFinite(x.area) ? x.area.toLocaleString('vi-VN') : '—'}</strong><small>ha</small></div><div class="kpi"><span>Điểm sức khỏe</span><strong>${Number.isFinite(x.score) ? x.score : '—'}</strong><small>/100</small></div><div class="kpi"><span>Giá trị</span><strong style="font-size:12px">${money(x.net)}</strong><small>tham khảo</small></div></div><table class="table">${row('Tên lô / dự án', val(f.project || c.card.name))}${row('Mã lô', val(f.code || c.card.plot?.id))}${row('Chủ sở hữu', val(f.owner))}${row('Loại cây', val(f.treeType))}${row('Tuổi cây', num(f.age, ' năm'))}${row('Nguồn dữ liệu', val(c.card.plot?.sourceName || 'KML người dùng'))}</table>`);
-  body += page(3, 'TRỰC QUAN HÓA VỆ TINH', 'Các lớp phân tích phổ', `<div class="visual-grid">${visual(c.snapshots?.falseColor, 'False Color', 'B08/B04/B03')}${visual(c.snapshots?.ndvi, 'NDVI', 'Độ xanh')}${visual(c.snapshots?.ndre, 'NDRE', 'Diệp lục')}${visual(c.snapshots?.ndmi, 'NDMI', 'Độ ẩm')}</div>`);
-  body += page(4, 'CHỈ SỐ', 'Bảng chỉ số viễn thám', `<table class="table">${row('NDVI', val(c.analysis.mean))}${row('EVI', val(c.analysis.evi))}${row('NDRE', val(c.analysis.ndre))}${row('GCI', val(c.analysis.gci))}${row('NDMI', val(c.analysis.ndmi))}${row('Độ che phủ cây', has(x.cover.tree_cover_pct) ? `${Number(x.cover.tree_cover_pct).toFixed(1)}%` : val())}${row('FVC', has(x.cover.fvc_density_pct) ? `${Number(x.cover.fvc_density_pct).toFixed(1)}%` : val())}</table><div class="notice">${val(c.analysis.note)}</div>`);
-  body += page(5, 'ƯỚC TÍNH', 'Giá trị tài sản', `<table class="table">${row('Sản lượng dự kiến', has(x.volume) ? `${Number(x.volume).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} m³` : val())}${row('Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val())}${row('Giá trị gỗ ước tính', money(x.gross))}${row('Giá trị ròng ước tính', money(x.net))}</table><div class="callout"><span>GIÁ TRỊ THAM KHẢO</span><strong>${money(x.net)}</strong></div>`);
-  body += page(6, 'KẾT LUẬN', 'Tóm tắt và phạm vi sử dụng', `<ul class="bullets"><li>Báo cáo hỗ trợ đọc nhanh tình trạng rừng từ Sentinel-2 và polygon KML.</li><li>Giá trị tài sản chỉ có ý nghĩa khi dữ liệu tuổi rừng, sản lượng và giá gỗ đã được xác minh.</li><li>Cần kiểm tra thực địa trước khi dùng cho tín dụng, đầu tư hoặc định giá chính thức.</li></ul><div class="signature"><div>Đại diện chủ sở hữu</div><div>Đơn vị lập báo cáo</div></div>`);
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${isBank ? REPORTS.bank.title : REPORTS.health.title}</title>${css}</head><body>${body}</body></html>`;
-}
-
-function bankReport(c, f) {
-  const x = facts(c, f);
+const CollateralDashboard = ({ c, f, x, pageNum }) => {
   const asset = has(x.net) ? Number(x.net) : null;
   const ltvPct = 60;
   const collateral = has(asset) ? asset * ltvPct / 100 : null;
   const healthText = Number.isFinite(x.score) && x.score >= 70 ? 'Tốt' : Number.isFinite(x.score) && x.score >= 55 ? 'Trung bình' : 'Cần xác minh';
   const dryRisk = has(c.analysis.ndmi) && Number(c.analysis.ndmi) < -0.1 ? 'Trung bình' : 'Thấp';
+  return page(pageNum, 'TÓM TẮT THẨM ĐỊNH', 'Tóm tắt kết quả thẩm định', `
+    <div class="kpis">
+      <div class="kpi"><span>Giá trị tài sản ước tính</span><strong style="font-size:12px">${money(asset)}</strong><small>VNĐ</small></div>
+      <div class="kpi"><span>Tỷ lệ cho vay đề xuất</span><strong>${ltvPct}%</strong><small>Tỷ lệ cho vay trên giá trị (LTV) tham khảo</small></div>
+      <div class="kpi"><span>Giá trị bảo đảm đề xuất</span><strong style="font-size:12px">${money(collateral)}</strong><small>VNĐ</small></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span>Điểm sức khỏe rừng</span><strong>${Number.isFinite(x.score) ? x.score : '—'}</strong><small>/100 · ${healthText}</small></div>
+      <div class="kpi"><span>Mức độ rủi ro</span><strong>${dryRisk}</strong><small>theo chỉ số độ ẩm (NDMI) và dữ liệu nhập</small></div>
+      <div class="kpi"><span>Khả năng thanh khoản</span><strong>TB-Cao</strong><small>cần đối chiếu thị trường gỗ</small></div>
+    </div>
+    <div class="notice">Các chỉ tiêu tín dụng là mô hình tham khảo để ngân hàng sàng lọc hồ sơ. Khi dùng thẩm định thật cần bổ sung pháp lý, khảo sát thực địa và chứng thư định giá.</div>
+  `);
+};
+
+const BankLocation = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'VỊ TRÍ & RANH GIỚI', 'Bản đồ vị trí lô rừng', `
+    <div class="map"><img src="${c.snapshots?.rgb || c.snapshot}"><div class="map-meta"><span>Tọa độ: ${esc(x.center)}</span><span>${Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : '—'}</span></div></div>
+    <table class="table">
+      ${row('Tọa độ trung tâm', esc(x.center))}
+      ${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}
+      ${row('Ranh giới', 'Tệp ranh giới (KML) trong ứng dụng')}
+      ${row('Nguồn ảnh', 'Ảnh màu tự nhiên vệ tinh Sentinel-2')}
+    </table>
+  `);
+};
+
+const SatelliteEvidence = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'PHÂN TÍCH VIỄN THÁM', 'Các lớp phân tích viễn thám', `
+    <div class="visual-grid">
+      ${visual(c.snapshots?.falseColor, 'Tổ hợp màu giả (False Color)', 'Nhận diện tán lá')}
+      ${visual(c.snapshots?.ndvi, 'Chỉ số thực vật (NDVI)', 'Độ xanh')}
+      ${visual(c.snapshots?.ndre, 'Chỉ số cạnh đỏ (NDRE)', 'Diệp lục')}
+      ${visual(c.snapshots?.ndmi, 'Chỉ số độ ẩm (NDMI)', 'Độ ẩm')}
+    </div>
+    <div class="notice">Ảnh tổ hợp màu giả dùng đúng tổ hợp Sentinel-2 B08, B04, B03 để làm nổi bật tán thực vật; các chỉ số còn lại là lớp phân tích riêng, không thay thế bản đồ pháp lý.</div>
+  `);
+};
+
+const BankAssessment = ({ c, f, x, pageNum }) => {
   const treeCover = has(x.cover.tree_cover_pct) ? `${Number(x.cover.tree_cover_pct).toFixed(1)}%` : val();
-  const fvc = has(x.cover.fvc_density_pct) ? `${Number(x.cover.fvc_density_pct).toFixed(1)}%` : val();
+  const healthText = Number.isFinite(x.score) && x.score >= 70 ? 'Tốt' : Number.isFinite(x.score) && x.score >= 55 ? 'Trung bình' : 'Cần xác minh';
+  return page(pageNum, 'CHỈ SỐ & ĐÁNH GIÁ', 'Bảng chỉ số viễn thám', `
+    <table class="table">
+      ${row('Chỉ số thực vật (NDVI)', val(c.analysis.mean))}
+      ${row('Chỉ số thực vật cải tiến (EVI)', val(c.analysis.evi))}
+      ${row('Chỉ số cạnh đỏ (NDRE)', val(c.analysis.ndre))}
+      ${row('Chỉ số diệp lục tố (GCI)', val(c.analysis.gci))}
+      ${row('Chỉ số độ ẩm tán lá (NDMI)', val(c.analysis.ndmi))}
+      ${row('Độ che phủ cây', treeCover)}
+    </table>
+    <div class="callout"><span>ĐÁNH GIÁ CHUNG</span><strong>${healthText}</strong></div>
+    <div class="notice">${val(c.analysis.note)}</div>
+  `);
+};
 
-  let body = cover(c, f, 'REPORT FOR BANK<br>THẨM ĐỊNH TÀI SẢN RỪNG', money(asset));
-  body += infoPage(c, f, x, 2);
-  body += page(3, 'TÓM TẮT THẨM ĐỊNH', 'Tóm tắt kết quả thẩm định', `<div class="kpis"><div class="kpi"><span>Giá trị tài sản ước tính</span><strong style="font-size:12px">${money(asset)}</strong><small>VNĐ</small></div><div class="kpi"><span>Tỷ lệ cho vay đề xuất</span><strong>${ltvPct}%</strong><small>LTV tham khảo</small></div><div class="kpi"><span>Giá trị bảo đảm đề xuất</span><strong style="font-size:12px">${money(collateral)}</strong><small>VNĐ</small></div></div><div class="kpis"><div class="kpi"><span>Điểm sức khỏe rừng</span><strong>${Number.isFinite(x.score) ? x.score : '—'}</strong><small>/100 · ${healthText}</small></div><div class="kpi"><span>Mức độ rủi ro</span><strong>${dryRisk}</strong><small>theo NDMI và dữ liệu nhập</small></div><div class="kpi"><span>Khả năng thanh khoản</span><strong>TB-Cao</strong><small>cần đối chiếu thị trường gỗ</small></div></div><div class="notice">Các chỉ tiêu tín dụng là mô hình tham khảo để ngân hàng sàng lọc hồ sơ. Khi dùng thẩm định thật cần bổ sung pháp lý, khảo sát thực địa và chứng thư định giá.</div>`);
-  body += page(4, 'VỊ TRÍ & RANH GIỚI', 'Bản đồ vị trí lô rừng', `<div class="map"><img src="${c.snapshots?.rgb || c.snapshot}"><div class="map-meta"><span>Tọa độ: ${esc(x.center)}</span><span>${Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : '—'}</span></div></div><table class="table">${row('Tọa độ trung tâm', esc(x.center))}${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}${row('Ranh giới', 'Polygon KML trong app')}${row('Nguồn ảnh', 'Sentinel-2 RGB')}</table>`);
-  body += page(5, 'PHÂN TÍCH VIỄN THÁM', 'Các lớp phân tích viễn thám', `<div class="visual-grid">${visual(c.snapshots?.falseColor, 'False Color', 'B08/B04/B03')}${visual(c.snapshots?.ndvi, 'NDVI', 'Độ xanh')}${visual(c.snapshots?.ndre, 'NDRE', 'Diệp lục')}${visual(c.snapshots?.ndmi, 'NDMI', 'Độ ẩm')}</div><div class="notice">False Color dùng đúng tổ hợp Sentinel-2 B08, B04, B03 để làm nổi bật tán thực vật; các chỉ số còn lại là lớp phân tích riêng, không thay thế bản đồ pháp lý.</div>`);
-  body += page(6, 'CHỈ SỐ & ĐÁNH GIÁ', 'Bảng chỉ số viễn thám', `<table class="table">${row('NDVI', val(c.analysis.mean))}${row('EVI', val(c.analysis.evi))}${row('NDRE', val(c.analysis.ndre))}${row('GCI', val(c.analysis.gci))}${row('NDMI', val(c.analysis.ndmi))}${row('Độ che phủ cây', treeCover)}${row('FVC density', fvc)}</table><div class="callout"><span>ĐÁNH GIÁ CHUNG</span><strong>${healthText}</strong></div><div class="notice">${val(c.analysis.note)}</div>`);
-  body += page(7, 'ƯỚC TÍNH TÀI SẢN', 'Bảng ước tính tài sản', `<table class="table">${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}${row('Tuổi trung bình', num(f.age, ' năm'))}${row('Sản lượng bảo thủ P10', has(f.p10Volume) ? `${Number(f.p10Volume).toLocaleString('vi-VN')} m³` : val())}${row('Sản lượng ước tính P50', has(f.p50Volume) ? `${Number(f.p50Volume).toLocaleString('vi-VN')} m³` : val())}${row('Sản lượng lạc quan P90', has(f.p90Volume) ? `${Number(f.p90Volume).toLocaleString('vi-VN')} m³` : val())}${row('Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val())}${row('Giá trị bảo thủ P10', money(f.p10Value))}${row('Giá trị ước tính P50', money(f.p50Value))}${row('Giá trị lạc quan P90', money(f.p90Value))}</table><div class="callout"><span>GIÁ TRỊ BẢO ĐẢM ĐỀ XUẤT · ${ltvPct}%</span><strong>${money(collateral)}</strong></div>`);
-  body += page(8, 'PHÂN TÍCH RỦI RO', 'Rủi ro tín dụng và tài sản', `<table class="table">${row('Rủi ro pháp lý', 'Cần kiểm tra hồ sơ')}${row('Rủi ro cháy rừng / khô hạn', dryRisk)}${row('Rủi ro thiên tai', 'Trung bình')}${row('Rủi ro thị trường', 'Trung bình')}${row('Rủi ro thanh khoản', 'Thấp - Trung bình')}</table><div class="notice"><strong>Kết luận rủi ro:</strong> Lô rừng có thể dùng cho bước sàng lọc tín dụng nếu thông tin pháp lý và quyền sử dụng đất được xác minh đầy đủ.</div>`);
-  body += page(9, 'DÒNG TIỀN DỰ KIẾN', 'Dòng tiền dự kiến', cashflowBlock(f, asset));
-  body += page(10, 'TÀI LIỆU PHÁP LÝ', 'Hồ sơ pháp lý cần cung cấp', `<ul class="bullets"><li>Giấy chứng nhận quyền sử dụng đất hoặc hợp đồng thuê đất.</li><li>Xác nhận ranh giới, mốc giới và diện tích.</li><li>Hồ sơ trồng rừng hoặc kế hoạch trồng rừng.</li><li>Biên bản kiểm kê thực địa và ảnh hiện trường.</li><li>Thông tin chủ sở hữu / khách hàng vay.</li></ul><div class="notice">Danh sách này là checklist phục vụ ngân hàng; trạng thái hợp lệ cần do bộ phận pháp lý xác nhận.</div>`);
-  body += page(11, 'KẾT LUẬN & KHUYẾN NGHỊ', 'Kết luận thẩm định', `<div class="callout"><span>KẾT LUẬN</span><strong>${Number.isFinite(x.score) && x.score >= 70 ? 'Có thể xem xét làm tài sản bảo đảm' : 'Cần bổ sung kiểm chứng trước khi cấp tín dụng'}</strong></div><ul class="bullets"><li>Tỷ lệ cho vay đề xuất tối đa ${ltvPct}% giá trị tài sản rừng đã xác minh.</li><li>Theo dõi định kỳ 3 tháng/lần bằng ảnh vệ tinh và cập nhật hồ sơ thực địa.</li><li>Cập nhật giá gỗ, tuổi rừng và trữ lượng sau mỗi lần khảo sát.</li></ul>`);
-  body += page(12, 'PHỤ LỤC', 'Phạm vi và lưu ý', `<ul class="bullets"><li>Ảnh vị trí gốc: Sentinel-2 RGB.</li><li>Lớp phân tích: False Color, NDVI, NDRE, NDMI.</li><li>Độ che phủ cây: dựa trên thống kê NDVI trong polygon.</li><li>Giá trị tài sản: dựa trên sản lượng và đơn giá người dùng nhập hoặc mô hình mặc định.</li><li>Giới hạn: độ phân giải Sentinel-2 10-20 m, mây, sai số ranh giới KML và thiếu dữ liệu thực địa.</li></ul><div class="notice">Báo cáo này chỉ có giá trị tham khảo, không thay thế chứng thư thẩm định giá hoặc quyết định tín dụng của ngân hàng.</div>`);
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${REPORTS.bank.title}</title>${css}</head><body>${body}</body></html>`;
-}
+const ValuationSection = ({ c, f, x, pageNum }) => {
+  const asset = has(x.net) ? Number(x.net) : null;
+  const ltvPct = 60;
+  const collateral = has(asset) ? asset * ltvPct / 100 : null;
+  return page(pageNum, 'ƯỚC TÍNH TÀI SẢN', 'Bảng ước tính tài sản', `
+    <table class="table">
+      ${row('Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val())}
+      ${row('Tuổi trung bình', num(f.age, ' năm'))}
+      ${row('Sản lượng ước tính', has(f.p50Volume) ? `${Number(f.p50Volume).toLocaleString('vi-VN')} m³` : val())}
+      ${row('Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val())}
+      ${row('Giá trị ước tính', money(f.p50Value))}
+    </table>
+    <div class="callout"><span>GIÁ TRỊ BẢO ĐẢM ĐỀ XUẤT · Tỷ lệ cho vay (LTV) ${ltvPct}%</span><strong>${money(collateral)}</strong></div>
+  `);
+};
 
-function corpRows(rows) {
-  return `<table class="table">${rows.map(([a, b]) => row(a, b)).join('')}</table>`;
-}
-
-function corpHeader(f, pageNo, title) {
-  const printed = new Date().toLocaleDateString('vi-VN');
-  return `<div class="corp-header"><div class="corp-brand"><div class="corp-logo">LK</div><div><strong>LÂM KÍNH</strong><span>Forest Intelligence</span></div></div><div class="corp-title"><span>${title}</span><h1>Investor Report</h1></div><div class="corp-meta"><div><b>Ngày lập:</b> ${val(f.date)}</div><div><b>Ngày in:</b> ${esc(printed)}</div></div></div><div class="corp-client"><div><span>Tên công ty khách hàng</span><strong>${val(f.owner)}</strong></div><div><span>Khách hàng / chủ sở hữu</span><strong>${val(f.owner)}</strong></div><div><span>Tên biểu mẫu</span><strong>Báo cáo cho nhà đầu tư</strong></div></div>`;
-}
-
-function corpFooter(pageNo) {
-  const printed = new Date().toLocaleDateString('vi-VN');
-  return `<div class="corp-footer"><div><div class="corp-sign">Chữ ký</div><small>Ngày in: ${esc(printed)}</small></div><div class="corp-seal">CON DẤU</div><div class="corp-page-number">Page ${pageNo} of 10</div></div>`;
-}
-
-function corpPage(f, pageNo, title, subtitle, body) {
-  return page(pageNo, `BÁO CÁO NHÀ ĐẦU TƯ · ${subtitle}`, title, body);
-}
+const CreditRiskSection = ({ c, f, x, pageNum }) => {
+  const dryRisk = has(c.analysis.ndmi) && Number(c.analysis.ndmi) < -0.1 ? 'Trung bình' : 'Thấp';
+  return page(pageNum, 'PHÂN TÍCH RỦI RO', 'Rủi ro tín dụng và tài sản', `
+    <table class="table">
+      ${row('Rủi ro pháp lý', 'Cần kiểm tra hồ sơ')}
+      ${row('Rủi ro cháy rừng / khô hạn', dryRisk)}
+      ${row('Rủi ro thiên tai', 'Trung bình')}
+      ${row('Rủi ro thị trường', 'Trung bình')}
+      ${row('Rủi ro thanh khoản', 'Thấp - Trung bình')}
+    </table>
+    <div class="notice"><strong>Kết luận rủi ro:</strong> Lô rừng có thể dùng cho bước sàng lọc tín dụng nếu thông tin pháp lý và quyền sử dụng đất được xác minh đầy đủ.</div>
+  `);
+};
 
 function cashflowBlock(f, asset) {
   let projection = [];
   try { projection = JSON.parse(f.projection || '[]'); } catch { projection = []; }
-  if (!projection.length) return `<table class="table">${row('Dòng tiền khai thác P50', money(f.p50Value || asset))}</table>`;
+  if (!projection.length) return `<table class="table">${row('Dòng tiền khai thác ước tính', money(f.p50Value || asset))}</table>`;
   const maxStanding = Math.max(...projection.map(item => item.standingValue), 1);
   const maxCash = Math.max(...projection.map(item => Math.abs(item.cashFlow)), 1);
   const bar = (value, maxValue, item, label, extra = '') => {
@@ -245,40 +361,229 @@ function cashflowBlock(f, asset) {
   const cashBars = projection.map(item => bar(item.cashFlow, maxCash, item, item.year, item.isHarvest ? '<br>Thu hoạch' : `<br>Tuổi ${item.age}`)).join('');
   const harvest = projection.at(-1);
   const totalCost = projection.slice(0, -1).reduce((sum, item) => sum + item.cost, 0);
-  return `<h3>Giá trị cây đứng</h3><div class="chart">${standingBars}</div><h3>Dòng tiền thật</h3><div class="chart">${cashBars}</div><table class="table">${row('Năm trồng', projection[0]?.year ?? val())}${row('Năm thu hoạch', harvest?.year ?? val())}${row('Số năm trong chu kỳ', `${projection.length} năm`)}${row('Tổng chi phí trước khai thác', money(-totalCost))}${row('Doanh thu khai thác P50', money(harvest?.standingValue))}${row('Dòng tiền ròng chu kỳ', money((harvest?.standingValue || 0) - totalCost))}${row('NPV tham khảo', money(((harvest?.standingValue || 0) - totalCost) * 0.86))}${row('IRR tham khảo', val(f.targetReturn || '18.7%'))}${row('Thời gian thu hồi vốn', val(f.payback || '5.2 năm'))}</table>`;
+  return `<h3>Giá trị cây ước tính</h3><div class="chart">${standingBars}</div><h3>Dòng tiền thật</h3><div class="chart">${cashBars}</div><table class="table">${row('Năm trồng', projection[0]?.year ?? val())}${row('Năm thu hoạch', harvest?.year ?? val())}${row('Số năm trong chu kỳ', `${projection.length} năm`)}${row('Tổng chi phí trước khai thác', money(-totalCost))}${row('Doanh thu khai thác ước tính', money(harvest?.standingValue))}${row('Dòng tiền ròng chu kỳ', money((harvest?.standingValue || 0) - totalCost))}${row('Giá trị hiện tại ròng (NPV) tham khảo', money(((harvest?.standingValue || 0) - totalCost) * 0.86))}${row('Tỷ suất hoàn vốn nội bộ (IRR) tham khảo', val(f.targetReturn || '18.7%'))}${row('Thời gian thu hồi vốn', val(f.payback || '5.2 năm'))}</table>`;
 }
 
-function investorReport(c, f) {
-  const x = facts(c, f);
+const CashFlowSection = ({ c, f, x, pageNum }) => {
+  const asset = has(x.net) ? Number(x.net) : null;
+  return page(pageNum, 'DÒNG TIỀN DỰ KIẾN', 'Dòng tiền dự kiến', cashflowBlock(f, asset));
+};
+
+const BankRecommendation = ({ c, f, x, pageNum }) => {
+  const ltvPct = 60;
+  return page(pageNum, 'KẾT LUẬN & KHUYẾN NGHỊ', 'Kết luận thẩm định', `
+    <div class="callout"><span>KẾT LUẬN</span><strong>${Number.isFinite(x.score) && x.score >= 70 ? 'Có thể xem xét làm tài sản bảo đảm' : 'Cần bổ sung kiểm chứng trước khi cấp tín dụng'}</strong></div>
+    <ul class="bullets">
+      <li>Tỷ lệ cho vay đề xuất tối đa ${ltvPct}% giá trị tài sản rừng đã xác minh.</li>
+      <li>Theo dõi định kỳ 3 tháng/lần bằng ảnh vệ tinh và cập nhật hồ sơ thực địa.</li>
+      <li>Cập nhật giá gỗ, tuổi rừng và trữ lượng sau mỗi lần khảo sát.</li>
+    </ul>
+    <div class="notice">Báo cáo này chỉ có giá trị tham khảo, không thay thế chứng thư thẩm định giá hoặc quyết định tín dụng của ngân hàng.</div>
+  `);
+};
+
+const BankLegal = ({ c, f, x, pageNum }) => {
+  return page(pageNum, 'TÀI LIỆU PHÁP LÝ', 'Hồ sơ pháp lý cần cung cấp', `
+    <ul class="bullets">
+      <li>Giấy chứng nhận quyền sử dụng đất hoặc hợp đồng thuê đất.</li>
+      <li>Xác nhận ranh giới, mốc giới và diện tích.</li>
+      <li>Hồ sơ trồng rừng hoặc kế hoạch trồng rừng.</li>
+      <li>Biên bản kiểm kê thực địa và ảnh hiện trường.</li>
+      <li>Thông tin chủ sở hữu / khách hàng vay.</li>
+    </ul>
+    <div class="notice">Danh sách này là danh mục đối chiếu phục vụ ngân hàng; trạng thái hợp lệ cần do bộ phận pháp lý xác nhận.</div>
+  `);
+};
+
+const InvestmentDashboard = ({ c, f, x, pageNum }) => {
   const asset = x.net || x.valuation.p50_value_vnd;
-  const future = has(asset) ? Number(asset) * 1.32 : null;
   const npv = has(asset) ? Number(asset) * 0.86 : null;
   const healthLabel = Number.isFinite(x.score) && x.score >= 70 ? 'Tốt' : Number.isFinite(x.score) && x.score >= 55 ? 'Trung bình' : 'Cần xác minh';
-  const treeCover = has(x.cover.tree_cover_pct) ? `${Number(x.cover.tree_cover_pct).toFixed(1)}%` : '—';
-  const fvc = has(x.cover.fvc_density_pct) ? `${Number(x.cover.fvc_density_pct).toFixed(1)}%` : '—';
-  const dryRisk = has(c.analysis.ndmi) && Number(c.analysis.ndmi) < -0.1 ? 'Trung bình' : 'Thấp';
+  return corpPage(f, pageNum, 'Tóm tắt đầu tư', 'Tóm tắt đầu tư', `
+    <div class="corp-grid two">
+      <div class="corp-card tint"><span>Giá trị ước tính</span><strong>${compactMoney(asset)}</strong><p>Giá trị tài sản ước tính đã tính hao hụt.</p></div>
+      <div class="corp-card tint"><span>Điểm hấp dẫn</span><strong>${healthLabel}</strong><p>Dựa trên điểm sức khỏe và độ che phủ thực tế.</p></div>
+    </div>
+    ${corpRows([['Tỷ suất hoàn vốn nội bộ (IRR) dự kiến', val(f.targetReturn || '18.7%')], ['Thời gian thu hồi vốn', val(f.payback || '5.2 năm')], ['Giá trị hiện tại ròng (NPV) tham khảo', compactMoney(npv)], ['Nguồn ảnh', 'Ảnh vệ tinh Sentinel-2 + tệp ranh giới (KML)'], ['Ghi chú', 'Cần xác minh pháp lý và khảo sát thực địa trước quyết định đầu tư.']])}
+  `);
+};
+
+const ExecutiveSummary = ({ c, f, x, pageNum }) => {
+  return corpPage(f, pageNum, 'Executive Summary', 'Executive Summary', `
+    <div class="corp-note">
+      <strong>Tóm tắt lý do đầu tư:</strong>
+      <ul class="bullets">
+        <li>Khu vực sinh thái phù hợp với chu kỳ sinh trưởng của Keo.</li>
+        <li>Tỷ suất sinh lời nội bộ kỳ vọng ở mức cao.</li>
+        <li>Khả năng thanh khoản gỗ tốt ở thị trường địa phương.</li>
+        <li>Có dữ liệu viễn thám hỗ trợ đánh giá rủi ro và giám sát từ xa.</li>
+        <li>Dòng tiền ổn định với rủi ro trong mức kiểm soát.</li>
+      </ul>
+    </div>
+  `);
+};
+
+const InvestorForestProfile = ({ c, f, x, pageNum }) => {
+  return corpPage(f, pageNum, 'Thông tin lô rừng', 'Thông tin lô rừng', 
+    corpRows([['Tên lô / dự án', val(f.project || c.card.name)], ['Mã lô', val(f.code || c.card.plot?.id)], ['Chủ sở hữu', val(f.owner)], ['Địa chỉ', val(f.address)], ['Tỉnh · Huyện · Xã', val([f.province, f.district, f.commune].filter(Boolean).join(' · '))], ['Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val()], ['Loại cây', val(f.treeType)], ['Ngày trồng', val(f.plantingDate)], ['Tuổi cây', num(f.age, ' năm')], ['Chu kỳ khai thác', num(f.cycle, ' năm')]]) + `<div class="corp-note">Không bỏ trường dữ liệu: các mục chưa có thông tin được giữ nguyên trạng thái thiếu dữ liệu để người dùng bổ sung.</div>`
+  );
+};
+
+const InvestorSatelliteEvidence = ({ c, f, x, pageNum }) => {
   const shot = (src, label) => `<figure class="corp-visual">${src ? `<img src="${src}">` : '<div class="visual-empty">Không có dữ liệu</div>'}<span>${label}</span></figure>`;
+  return corpPage(f, pageNum, 'Phân tích viễn thám', 'Các lớp viễn thám', `
+    <div class="corp-visual-grid">
+      ${shot(c.snapshots?.falseColor, 'Tổ hợp màu giả (False Color)')}
+      ${shot(c.snapshots?.ndvi, 'Chỉ số thực vật (NDVI)')}
+      ${shot(c.snapshots?.ndre, 'Chỉ số cạnh đỏ (NDRE)')}
+      ${shot(c.snapshots?.ndmi, 'Chỉ số độ ẩm (NDMI)')}
+    </div>
+    ${corpRows([['Chỉ số thực vật (NDVI)', val(c.analysis.mean)], ['Chỉ số thực vật cải tiến (EVI)', val(c.analysis.evi)], ['Chỉ số cạnh đỏ (NDRE)', val(c.analysis.ndre)], ['Chỉ số diệp lục tố (GCI)', val(c.analysis.gci)], ['Chỉ số độ ẩm tán lá (NDMI)', val(c.analysis.ndmi)]])}
+  `);
+};
 
-  const p1 = cover(c, f, 'INVESTOR REPORT<br>ĐÁNH GIÁ ĐẦU TƯ RỪNG', compactMoney(asset));
-  const p2 = corpPage(f, 2, 'Tóm tắt đầu tư', 'Investment Summary', `<div class="corp-grid"><div class="corp-card tint"><span>Giá trị P50</span><strong>${compactMoney(asset)}</strong><p>Giá trị tài sản ước tính đã tính hao hụt.</p></div><div class="corp-card tint"><span>Biên P10-P90</span><strong>${compactMoney(f.p10Value)} - ${compactMoney(f.p90Value)}</strong><p>Khoảng giá trị tham khảo.</p></div><div class="corp-card tint"><span>Điểm hấp dẫn</span><strong>${healthLabel}</strong><p>Dựa trên health score và độ che phủ.</p></div></div>${corpRows([['Tỷ suất kỳ vọng', val(f.targetReturn || '18.7%')], ['Thời gian thu hồi vốn', val(f.payback || '5.2 năm')], ['NPV tham khảo', compactMoney(npv)], ['Nguồn ảnh', 'Sentinel-2 + polygon KML'], ['Ghi chú', 'Cần xác minh pháp lý và khảo sát thực địa trước quyết định đầu tư.']])}`);
-  const p3 = corpPage(f, 3, 'Thông tin lô rừng', 'Forest Lot Profile', corpRows([['Tên lô / dự án', val(f.project || c.card.name)], ['Mã lô', val(f.code || c.card.plot?.id)], ['Chủ sở hữu', val(f.owner)], ['Địa chỉ', val(f.address)], ['Tỉnh · Huyện · Xã', val([f.province, f.district, f.commune].filter(Boolean).join(' · '))], ['Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val()], ['Loại cây', val(f.treeType)], ['Ngày trồng', val(f.plantingDate)], ['Tuổi cây', num(f.age, ' năm')], ['Chu kỳ khai thác', num(f.cycle, ' năm')]]) + `<div class="corp-note">Không bỏ trường dữ liệu: các mục chưa có thông tin được giữ nguyên trạng thái thiếu dữ liệu để người dùng bổ sung.</div>`);
-  const p4 = corpPage(f, 4, 'Vị trí & tiềm năng khu vực', 'Location & Boundary', `<div class="corp-img"><img src="${c.snapshots?.rgb || c.snapshot}"></div>${corpRows([['Tọa độ trung tâm', esc(x.center)], ['Diện tích', Number.isFinite(x.area) ? `${x.area.toLocaleString('vi-VN')} ha` : val()], ['Ranh giới', 'Polygon KML trong app'], ['Hệ tọa độ', 'WGS 84'], ['Nguồn nền ảnh', 'Sentinel-2 RGB']])}`);
-  const p5 = corpPage(f, 5, 'Phân tích viễn thám', 'Remote Sensing Layers', `<div class="corp-visual-grid">${shot(c.snapshots?.falseColor, 'False Color')}${shot(c.snapshots?.ndvi, 'NDVI')}${shot(c.snapshots?.ndre, 'NDRE')}${shot(c.snapshots?.ndmi, 'NDMI')}</div>${corpRows([['NDVI', val(c.analysis.mean)], ['EVI', val(c.analysis.evi)], ['NDRE', val(c.analysis.ndre)], ['GCI', val(c.analysis.gci)], ['NDMI', val(c.analysis.ndmi)]])}`);
-  const p6 = corpPage(f, 6, 'Sức khỏe & tăng trưởng', 'Health & Growth', `<div class="corp-meter" style="--s:${x.score || 0}"><div class="corp-ring"><b>${Number.isFinite(x.score) ? x.score : '—'}</b></div><div>${corpRows([['Health score', Number.isFinite(x.score) ? `${x.score}/100` : val()], ['Đánh giá', val(c.analysis.healthClass || healthLabel)], ['NDVI trung bình', val(c.analysis.mean)], ['Độ che phủ cây', treeCover], ['FVC density', fvc], ['Diễn giải', val(c.analysis.note)]])}</div></div>`);
-  const p7 = corpPage(f, 7, 'Ước tính sản lượng & giá trị', 'Yield & Asset Value', corpRows([['Diện tích có cây', has(x.cover.tree_area_ha) ? `${Number(x.cover.tree_area_ha).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ha` : val()], ['Năng suất P50', has(f.yieldPerHa) ? `${Number(f.yieldPerHa).toLocaleString('vi-VN')} m³/ha` : val()], ['Sản lượng P10', has(f.p10Volume) ? `${Number(f.p10Volume).toLocaleString('vi-VN')} m³` : val()], ['Sản lượng P50', has(f.p50Volume) ? `${Number(f.p50Volume).toLocaleString('vi-VN')} m³` : val()], ['Sản lượng P90', has(f.p90Volume) ? `${Number(f.p90Volume).toLocaleString('vi-VN')} m³` : val()], ['Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val()], ['Giá trị P10', money(f.p10Value)], ['Giá trị P50', money(f.p50Value)], ['Giá trị P90', money(f.p90Value)]]) + `<div class="corp-note">Các số liệu tài chính là mô hình ước tính kỹ thuật, không thay thế báo cáo định giá được kiểm toán hoặc chứng thư thẩm định.</div>`);
-  const p8 = corpPage(f, 8, 'Hiệu quả đầu tư', 'ROI & Cash Flow', `<div class="corp-grid"><div class="corp-card tint"><span>NPV P50</span><strong>${compactMoney(npv)}</strong></div><div class="corp-card tint"><span>IRR tham khảo</span><strong>${val(f.targetReturn || '18.7%')}</strong></div><div class="corp-card tint"><span>Payback</span><strong>${val(f.payback || '5.2 năm')}</strong></div></div>${cashflowBlock(f, asset)}`);
-  const p9 = corpPage(f, 9, 'Phân tích rủi ro & cơ hội', 'Risk & Opportunity', `<div class="corp-card"><div class="risk-row"><span>Rủi ro thị trường</span><b>Trung bình</b></div><div class="risk-row"><span>Rủi ro thiên tai</span><b>${dryRisk}</b></div><div class="risk-row"><span>Rủi ro pháp lý</span><b>Cần kiểm tra</b></div><div class="risk-row"><span>Rủi ro thanh khoản</span><b>Thấp - TB</b></div><div class="risk-row"><span>Cơ hội carbon / tăng trưởng</span><b>Có</b></div></div><div class="corp-note">Rủi ro chỉ là phân loại định hướng vì chưa có bộ hồ sơ pháp lý đầy đủ, kiểm kê thực địa và chuỗi ảnh đa thời điểm.</div>`);
-  const p10 = corpPage(f, 10, 'Kế hoạch khai thác', 'Harvest Plan', `<div class="timeline"><div><b>Năm 1-3</b><span>Chăm sóc, kiểm kê, theo dõi stress</span></div><div><b>Năm 4-7</b><span>Tỉa thưa, cập nhật định giá</span></div><div><b>Năm 8+</b><span>Khai thác chính / gỗ lớn</span></div></div><div class="corp-grid two" style="margin-top:7mm"><div>${corpRows([['Sản phẩm đầu ra', 'Gỗ nguyên liệu hoặc gỗ lớn tùy chu kỳ'], ['Dữ liệu cần bổ sung', 'Ô mẫu, tuổi rừng, mật độ, hồ sơ pháp lý'], ['Tần suất cập nhật', '3 tháng/lần hoặc sau biến động lớn']])}</div><div class="corp-card tint"><h3>Phụ lục truy cập</h3><div class="qr"></div><p>QR placeholder cho bản đồ và dữ liệu chi tiết khi triển khai online.</p></div></div>`);
+const InvestorHealth = ({ c, f, x, pageNum }) => {
+  const healthLabel = Number.isFinite(x.score) && x.score >= 70 ? 'Tốt' : Number.isFinite(x.score) && x.score >= 55 ? 'Trung bình' : 'Cần xác minh';
+  const treeCover = has(x.cover.tree_cover_pct) ? `${Number(x.cover.tree_cover_pct).toFixed(1)}%` : '—';
+  return corpPage(f, pageNum, 'Sức khỏe & tăng trưởng', 'Sức khỏe & Tăng trưởng', `
+    <div class="corp-meter" style="--s:${x.score || 0}">
+      <div class="corp-ring"><b>${Number.isFinite(x.score) ? x.score : '—'}</b></div>
+      <div>
+        ${corpRows([['Điểm sức khỏe', Number.isFinite(x.score) ? `${x.score}/100` : val()], ['Đánh giá', val(c.analysis.healthClass || healthLabel)], ['Chỉ số thực vật trung bình', val(c.analysis.mean)], ['Độ che phủ cây', treeCover], ['Diễn giải', val(c.analysis.note)]])}
+      </div>
+    </div>
+  `);
+};
 
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${REPORTS.investor.title}</title>${css}</head><body>${p1}${p2}${p3}${p4}${p5}${p6}${p7}${p8}${p9}${p10}</body></html>`;
+const FinancialProjection = ({ c, f, x, pageNum }) => {
+  return corpPage(f, pageNum, 'Ước tính sản lượng & giá trị', 'Ước tính sản lượng & Giá trị', 
+    corpRows([['Diện tích có cây', has(x.cover.tree_area_ha) ? `${Number(x.cover.tree_area_ha).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ha` : val()], ['Năng suất ước tính', has(f.yieldPerHa) ? `${Number(f.yieldPerHa).toLocaleString('vi-VN')} m³/ha` : val()], ['Sản lượng ước tính', has(f.p50Volume) ? `${Number(f.p50Volume).toLocaleString('vi-VN')} m³` : val()], ['Giá gỗ tham chiếu', has(f.woodPrice) ? `${money(f.woodPrice)} / m³` : val()], ['Giá trị ước tính', money(f.p50Value)]]) + `<div class="corp-note">Các số liệu tài chính là mô hình ước tính kỹ thuật, không thay thế báo cáo định giá được kiểm toán hoặc chứng thư thẩm định.</div>`
+  );
+};
+
+const InvestorCashFlow = ({ c, f, x, pageNum }) => {
+  const asset = x.net || x.valuation.p50_value_vnd;
+  const npv = has(asset) ? Number(asset) * 0.86 : null;
+  return corpPage(f, pageNum, 'Hiệu quả đầu tư', 'Hiệu quả & Dòng tiền', `
+    <div class="corp-grid">
+      <div class="corp-card tint"><span>Giá trị hiện tại ròng (NPV)</span><strong>${compactMoney(npv)}</strong></div>
+      <div class="corp-card tint"><span>Tỷ suất hoàn vốn nội bộ (IRR)</span><strong>${val(f.targetReturn || '18.7%')}</strong></div>
+      <div class="corp-card tint"><span>Thời gian thu hồi vốn</span><strong>${val(f.payback || '5.2 năm')}</strong></div>
+    </div>
+    ${cashflowBlock(f, asset)}
+  `);
+};
+
+const InvestmentRisk = ({ c, f, x, pageNum }) => {
+  const dryRisk = has(c.analysis.ndmi) && Number(c.analysis.ndmi) < -0.1 ? 'Trung bình' : 'Thấp';
+  return corpPage(f, pageNum, 'Phân tích rủi ro & cơ hội', 'Rủi ro & Cơ hội', `
+    <div class="corp-card">
+      <div class="risk-row"><span>Rủi ro thị trường</span><b>Trung bình</b></div>
+      <div class="risk-row"><span>Rủi ro thiên tai</span><b>${dryRisk}</b></div>
+      <div class="risk-row"><span>Rủi ro pháp lý</span><b>Cần kiểm tra</b></div>
+      <div class="risk-row"><span>Rủi ro thanh khoản</span><b>Thấp - TB</b></div>
+      <div class="risk-row"><span>Cơ hội carbon / tăng trưởng</span><b>Có</b></div>
+    </div>
+    <div class="corp-note">Rủi ro chỉ là phân loại định hướng vì chưa có bộ hồ sơ pháp lý đầy đủ, kiểm kê thực địa và chuỗi ảnh đa thời điểm.</div>
+  `);
+};
+
+const InvestmentRecommendation = ({ c, f, x, pageNum }) => {
+  return corpPage(f, pageNum, 'Kế hoạch khai thác', 'Kế hoạch khai thác', `
+    <div class="timeline">
+      <div><b>Năm 1-3</b><span>Chăm sóc, kiểm kê, theo dõi stress</span></div>
+      <div><b>Năm 4-7</b><span>Tỉa thưa, cập nhật định giá</span></div>
+      <div><b>Năm 8+</b><span>Khai thác chính / gỗ lớn</span></div>
+    </div>
+    <div class="corp-grid two" style="margin-top:7mm">
+      <div>${corpRows([['Sản phẩm đầu ra', 'Gỗ nguyên liệu hoặc gỗ lớn tùy chu kỳ'], ['Dữ liệu cần bổ sung', 'Ô mẫu, tuổi rừng, mật độ, hồ sơ pháp lý'], ['Tần suất cập nhật', '3 tháng/lần hoặc sau biến động lớn']])}</div>
+      <div class="corp-card tint"><h3>Phụ lục truy cập</h3><div class="qr"></div><p>Mã QR cho bản đồ và dữ liệu chi tiết khi triển khai trực tuyến.</p></div>
+    </div>
+  `);
+};
+
+const Appendix = ({ c, f, x, pageNum }) => {
+  return corpPage(f, pageNum, 'Phụ lục', 'Phạm vi & Giới hạn', `
+    <ul class="bullets">
+      <li>Vệ tinh: Sentinel-2 RGB, NDVI, NDRE, NDMI.</li>
+      <li>Giới hạn: độ phân giải Sentinel-2 10-20 m, ảnh hưởng của mây, sai số ranh giới.</li>
+      <li>Báo cáo này hỗ trợ quyết định nội bộ, không dùng làm chứng thư thẩm định giá.</li>
+    </ul>
+  `);
+};
+
+// --- RENDER ENGINE & CONFIGS ---
+
+const ForestReportConfig = [
+  CoverPage,
+  ExecutiveDashboard,
+  ForestProfile,
+  SatelliteOverview,
+  HealthAssessment,
+  AssetEstimation,
+  OwnerRecommendation,
+  Disclaimer
+];
+
+const BankReportConfig = [
+  CoverPage,
+  CollateralDashboard,
+  ForestProfile,
+  BankLocation,
+  SatelliteEvidence,
+  BankAssessment,
+  ValuationSection,
+  CreditRiskSection,
+  CashFlowSection,
+  BankRecommendation,
+  BankLegal
+];
+
+const InvestorReportConfig = [
+  CoverPage,
+  InvestmentDashboard,
+  ExecutiveSummary,
+  InvestorForestProfile,
+  InvestorSatelliteEvidence,
+  InvestorHealth,
+  FinancialProjection,
+  InvestorCashFlow,
+  InvestmentRisk,
+  InvestmentRecommendation,
+  Appendix
+];
+
+function renderReport(components, props, title) {
+  const body = components.map((Component, i) => Component({ ...props, pageNum: i + 1 })).join('');
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${title}</title>${css}</head><body>${body}</body></html>`;
 }
 
 function build(context, form) {
   const prepared = filledForm(context, form);
-  if (prepared.type === 'health') return healthReport(context, prepared);
-  if (prepared.type === 'bank') return bankReport(context, prepared);
-  if (prepared.type === 'investor') return investorReport(context, prepared);
-  return basicReport(context, prepared);
+  const x = facts(context, prepared);
+  const props = { c: context, f: prepared, x };
+  
+  if (prepared.type === 'health') {
+    props.title = 'BÁO CÁO SỨC KHỎE RỪNG';
+    props.highlight = '';
+    return renderReport(ForestReportConfig, props, REPORTS.health.title);
+  }
+  if (prepared.type === 'bank') {
+    props.title = 'THẨM ĐỊNH TÀI SẢN RỪNG CHO NGÂN HÀNG';
+    const asset = has(x.net) ? Number(x.net) : null;
+    props.highlight = money(asset);
+    return renderReport(BankReportConfig, props, REPORTS.bank.title);
+  }
+  if (prepared.type === 'investor') {
+    props.title = 'BÁO CÁO ĐÁNH GIÁ ĐẦU TƯ RỪNG';
+    const asset = x.net || x.valuation.p50_value_vnd;
+    props.highlight = compactMoney(asset);
+    return renderReport(InvestorReportConfig, props, REPORTS.investor.title);
+  }
+  // Fallback basic
+  props.title = 'BÁO CÁO SỨC KHỎE RỪNG';
+  props.highlight = '';
+  return renderReport(ForestReportConfig, props, REPORTS.health.title);
 }
 
 export function openReportBuilder(context, initialType = 'health') {
@@ -304,7 +609,7 @@ export function openReportBuilder(context, initialType = 'health') {
   const checked = (type) => initialType === type ? 'checked' : '';
 
   const formView = () => {
-    root.innerHTML = `<div class="report-setup-shell"><div class="report-setup-head"><div><span>REPORT BUILDER</span><h2>Tạo báo cáo tài sản rừng</h2><p>Chọn mẫu và bổ sung dữ liệu không có trong KML.</p></div><button data-close>×</button></div><form class="report-setup-form"><section class="report-type-picker"><label><input type="radio" name="type" value="health" ${checked('health')}><span><strong>Báo cáo sức khỏe</strong><small>Chỉ số phổ, sức khỏe, khuyến nghị</small></span></label><label><input type="radio" name="type" value="bank" ${checked('bank')}><span><strong>Báo cáo cho ngân hàng</strong><small>12 trang · thẩm định, pháp lý, rủi ro</small></span></label><label><input type="radio" name="type" value="investor" ${checked('investor')}><span><strong>Báo cáo cho nhà đầu tư</strong><small>10 trang A4 · corporate print</small></span></label></section><div class="report-form-grid">${field('owner', 'Tên công ty khách hàng / chủ sở hữu')}${field('project', 'Tên dự án / tên lô', context.card.name)}${field('code', 'Mã hóa đơn / mã lô', context.card.plot?.id)}${field('date', 'Ngày lập', new Date().toISOString().slice(0, 10), 'date')}${field('address', 'Địa chỉ')}${field('province', 'Tỉnh')}${field('district', 'Huyện')}${field('commune', 'Xã')}${field('treeType', 'Loại cây', demo.treeType)}${field('plantingDate', 'Ngày trồng', demo.plantingDate, 'date')}${field('age', 'Tuổi cây (năm)', demo.age, 'number')}${field('cycle', 'Chu kỳ khai thác (năm)', demo.cycle, 'number')}</div><div class="report-form-section"><h3>Giả định định giá</h3><p>Để trống nếu chưa được xác minh. Báo cáo vẫn giữ nguyên trường và hiển thị thiếu dữ liệu.</p><div class="report-form-grid">${field('volume', 'Sản lượng P50 / dự kiến (m³)', demo.volume, 'number')}${field('woodPrice', 'Giá gỗ (VNĐ/m³)', demo.woodPrice, 'number')}${field('assetValue', 'Giá trị hiện tại (VNĐ)', demo.assetValue, 'number')}${field('targetReturn', 'Tỷ suất kỳ vọng', demo.targetReturn)}${field('payback', 'Thời gian thu hồi vốn', demo.payback)}</div></div><div class="report-form-actions"><button type="button" data-close>Hủy</button><button class="primary">Tạo bản xem trước</button></div></form></div>`;
+    root.innerHTML = `<div class="report-setup-shell"><div class="report-setup-head"><div><span>REPORT BUILDER</span><h2>Tạo báo cáo tài sản rừng</h2><p>Chọn mẫu và bổ sung dữ liệu không có trong KML.</p></div><button data-close>×</button></div><form class="report-setup-form"><section class="report-type-picker"><label><input type="radio" name="type" value="health" ${checked('health')}><span><strong>Báo cáo sức khỏe</strong><small>Chỉ số phổ, sức khỏe, khuyến nghị</small></span></label><label><input type="radio" name="type" value="bank" ${checked('bank')}><span><strong>Báo cáo cho ngân hàng</strong><small>11 trang · thẩm định, pháp lý, rủi ro</small></span></label><label><input type="radio" name="type" value="investor" ${checked('investor')}><span><strong>Báo cáo cho nhà đầu tư</strong><small>11 trang A4 · corporate print</small></span></label></section><div class="report-form-grid">${field('owner', 'Tên công ty khách hàng / chủ sở hữu')}${field('project', 'Tên dự án / tên lô', context.card.name)}${field('code', 'Mã hóa đơn / mã lô', context.card.plot?.id)}${field('date', 'Ngày lập', new Date().toISOString().slice(0, 10), 'date')}${field('address', 'Địa chỉ')}${field('province', 'Tỉnh')}${field('district', 'Huyện')}${field('commune', 'Xã')}${field('treeType', 'Loại cây', demo.treeType)}${field('plantingDate', 'Ngày trồng', demo.plantingDate, 'date')}${field('age', 'Tuổi cây (năm)', demo.age, 'number')}${field('cycle', 'Chu kỳ khai thác (năm)', demo.cycle, 'number')}</div><div class="report-form-section"><h3>Giả định định giá</h3><p>Để trống nếu chưa được xác minh. Báo cáo vẫn giữ nguyên trường và hiển thị thiếu dữ liệu.</p><div class="report-form-grid">${field('volume', 'Sản lượng dự kiến (m³)', demo.volume, 'number')}${field('woodPrice', 'Giá gỗ (VNĐ/m³)', demo.woodPrice, 'number')}${field('assetValue', 'Giá trị hiện tại (VNĐ)', demo.assetValue, 'number')}${field('targetReturn', 'Tỷ suất kỳ vọng', demo.targetReturn)}${field('payback', 'Thời Thời gian thu hồi vốn', demo.payback)}</div></div><div class="report-form-actions"><button type="button" data-close>Hủy</button><button class="primary">Tạo bản xem trước</button></div></form></div>`;
 
     root.querySelector('input[name="code"]')?.closest('label')?.remove();
     root.querySelectorAll('[data-close]').forEach((button) => {
@@ -315,14 +620,51 @@ export function openReportBuilder(context, initialType = 'health') {
       const form = Object.fromEntries(new FormData(event.currentTarget));
       const report = REPORTS[form.type] || REPORTS.health;
       const html = build(context, form);
-      root.innerHTML = `<div class="pdf-preview-toolbar"><div><strong>${report.title}</strong><span>A4 dọc · ${report.pages}</span></div><div class="pdf-preview-actions"><button data-back>Sửa thông tin</button><button data-close>Đóng</button><button class="primary" data-print>In / Lưu PDF</button></div></div><iframe title="Xem trước PDF"></iframe>`;
+      root.innerHTML = `<div class="pdf-preview-toolbar"><div><strong>${report.title}</strong><span>A4 dọc</span></div><div class="pdf-preview-actions"><button data-back>Sửa thông tin</button><button data-close>Đóng</button><div style="position: relative; display: inline-block;"><button class="primary" type="button" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">In / Lưu PDF ▾</button><div style="display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; background: white; border: 1px solid #d4ded6; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; min-width: 140px; overflow: hidden;"><button data-print="current" style="display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; font-size: 13px; color: #14251a; cursor: pointer; border-bottom: 1px solid #f2f6f3;" onmouseover="this.style.background='#f2f6f3'" onmouseout="this.style.background='none'">In bản này</button><button data-print="all" style="display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; font-size: 13px; color: #14251a; cursor: pointer;" onmouseover="this.style.background='#f2f6f3'" onmouseout="this.style.background='none'">In 3 bản</button></div></div></div></div><iframe title="Xem trước PDF"></iframe>`;
       const frame = root.querySelector('iframe');
       frame.srcdoc = html;
       root.querySelector('[data-back]').onclick = formView;
       root.querySelector('[data-close]').onclick = () => root.remove();
-      root.querySelector('[data-print]').onclick = () => {
-        frame.contentWindow?.focus();
-        frame.contentWindow?.print();
+      
+      const printReport = (htmlContent, fileName) => {
+        const printWindow = document.createElement('iframe');
+        printWindow.style.position = 'absolute';
+        printWindow.style.top = '-9999px';
+        document.body.appendChild(printWindow);
+        printWindow.contentDocument.open();
+        printWindow.contentDocument.write(htmlContent);
+        printWindow.contentDocument.title = fileName;
+        printWindow.contentDocument.close();
+        
+        printWindow.contentWindow.focus();
+        setTimeout(() => {
+          printWindow.contentWindow.print();
+          setTimeout(() => printWindow.remove(), 1000);
+        }, 500);
+      };
+
+      root.querySelector('[data-print="current"]').onclick = () => {
+        const projectName = context.card.name || 'Bao_cao';
+        const fileName = `${report.title} - ${projectName}`;
+        printReport(frame.srcdoc, fileName);
+      };
+
+      root.querySelector('[data-print="all"]').onclick = () => {
+        const h1 = build(context, { ...form, type: 'health' });
+        const h2 = build(context, { ...form, type: 'bank' });
+        const h3 = build(context, { ...form, type: 'investor' });
+        
+        const extractBody = (h) => {
+          const match = h.match(/<body>([\s\S]*?)<\/body>/i);
+          return match ? match[1] : '';
+        };
+        
+        const combinedBody = extractBody(h1) + extractBody(h2) + extractBody(h3);
+        const combinedHtml = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Báo Cáo Tổng Hợp</title>${css}</head><body>${combinedBody}</body></html>`;
+        
+        const projectName = context.card.name || 'Lam_Kinh';
+        const fileName = `Bao_cao_tong_hop - ${projectName}`;
+        printReport(combinedHtml, fileName);
       };
     };
   };
