@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node tools/dev-with-api.cjs",
+    "dev:vite": "vite",
+    "cover-api": "python tools/pc_cover_api.py",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"

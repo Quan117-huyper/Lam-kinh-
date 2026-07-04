@@ -69,8 +69,11 @@
   }
 
   window.addEventListener("DOMContentLoaded", () => {
-    $("#spectralMode").addEventListener("change", updateLegend);
-    $("#exportMap").addEventListener("click", exportMap);
+    const spectralMode = $("#spectralMode");
+    const exportButton = $("#exportMap");
+    if (!spectralMode || !exportButton) return;
+    spectralMode.addEventListener("change", updateLegend);
+    exportButton.addEventListener("click", exportMap);
     updateLegend();
   });
 })();

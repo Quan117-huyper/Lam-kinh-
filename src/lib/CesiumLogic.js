@@ -38,8 +38,8 @@ export function initCesiumMap(containerId, callbacks) {
       label: "Tán lá/ranh rừng",
       description: "B08/B04/B03: cây khỏe nổi đỏ, dễ tách ranh tán lá với đất trống.",
       assets: ["B08", "B04", "B03"],
-      rescale: "0,4500",
-      colorFormula: "Gamma RGB 2.4 Saturation 1.12 Sigmoidal RGB 12 0.35",
+      rescale: "800,3000",
+      colorFormula: "Gamma RGB 1.6 Saturation 1.3",
       alpha: 0.68
     },
     "ndvi": {
@@ -881,6 +881,21 @@ export function initCesiumMap(containerId, callbacks) {
 
   function setDensity(val) { density = val; clearTimeout(densityTimer); densityTimer = setTimeout(rebuildForest, 120); }
 
+  async function calculateCoverAndValue(options = {}) {
+    const plot = selectedPlot || plots[0];
+    if (!plot) throw new Error("Chưa có polygon để tính độ che phủ.");
+    callbacks.onCoverUpdate?.({ status: "loading", note: "Đang tính bằng Microsoft Planetary Computer..." });
+    const response = await fetch("/api/cover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ geojson: plotAsGeoJson(plot), options })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Cover API HTTP ${response.status}`);
+    callbacks.onCoverUpdate?.({ status: "ok", plotName: plot.name, ...result });
+    return result;
+  }
+
   function toggle2D() { is3D = !is3D; if (is3D) scene.morphTo3D(1); else scene.morphTo2D(1); }
 
   
@@ -914,7 +929,7 @@ export function initCesiumMap(containerId, callbacks) {
     return scene.canvas.toDataURL("image/jpeg", 0.92);
   }
 
-  function waitForImagery(timeoutMs = 3500) {
+  function waitForImagery(timeoutMs = 1400) {
     return new Promise((resolve) => {
       let settled = false;
       const finish = () => {
@@ -926,7 +941,7 @@ export function initCesiumMap(containerId, callbacks) {
         resolve();
       };
       const removeListener = scene.globe.tileLoadProgressEvent.addEventListener((pending) => {
-        if (pending === 0) setTimeout(finish, 180);
+        if (pending === 0) setTimeout(finish, 80);
       });
       const timeout = setTimeout(finish, timeoutMs);
       scene.requestRender();
@@ -951,7 +966,7 @@ export function initCesiumMap(containerId, callbacks) {
     for (const [key, mode] of modes) {
       try {
         await renderSpectralLayer(mode, plot);
-        await waitForImagery();
+        await waitForImagery(mode === "true-color" ? 900 : 1200);
         captures[key] = getMapSnapshot();
       } catch (error) {
         console.warn(`Không thể chụp lớp ${mode}:`, error);
@@ -962,5 +977,5 @@ export function initCesiumMap(containerId, callbacks) {
     return captures;
   }
 
-  return { setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, exportMap, getMapSnapshot, getReportSnapshots, destroy };
+  return { setDensity, toggleDrawing, flyToAll, zoomIn, zoomOut, toggleReference, toggleSatellite, setSpectralMode, toggleForest, toggleZone, toggle2D, calculateCoverAndValue, exportMap, getMapSnapshot, getReportSnapshots, destroy };
 }

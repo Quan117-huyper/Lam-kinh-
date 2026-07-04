@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
+.tmp/
+__pycache__/
+*.pyc
+public/lam_kinh_public.kml
 
 # Editor directories and files
 .vscode/*
